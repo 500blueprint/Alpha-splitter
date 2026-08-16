@@ -1,0 +1,93 @@
+<!doctype html>
+<html><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Alpha Splitter V2</title>
+<style>
+body{font-family:-apple-system,BlinkMacSystemFont,sans-serif;margin:0;background:#f4effb;color:#21172e}
+main{max-width:760px;margin:auto;padding:18px} .card{background:#fff;padding:17px;border-radius:18px;margin:12px 0}
+h1{margin:5px 0}.muted{color:#6c6178} label{display:block;font-weight:700;margin:12px 0 6px}
+input,select,button{font:inherit;width:100%;box-sizing:border-box;padding:14px;border-radius:12px}
+input,select{border:1px solid #d8cfe3;background:#fff} button{border:0;background:#302044;color:#fff;font-weight:800;margin-top:12px}
+button:disabled{opacity:.4}.row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+canvas{width:100%;height:auto;border-radius:12px;background:#eee}.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.item{border:1px solid #ddd;border-radius:10px;padding:5px}.item img{width:100%;aspect-ratio:1;object-fit:contain}.item input{padding:7px;text-align:center}
+</style></head><body><main>
+<h1>✨ Alpha Splitter V2</h1>
+<p class="muted">iPhone-friendly version. Pick your PNG, then split it into transparent letter files.</p>
+<div class="card">
+<label>Choose alpha PNG</label><input id="picker" type="file" accept="image/*">
+<p id="chosen" class="muted">No image selected yet.</p>
+<div class="row"><div><label>Labels</label><select id="mode"><option>A-Z</option><option>a-z</option><option>0-9</option></select></div>
+<div><label>Padding</label><input id="pad" type="number" value="10" min="0"></div></div>
+<button id="split" disabled>Detect & Split</button>
+</div>
+<div class="card" id="pv" hidden><canvas id="view"></canvas><p id="msg"></p></div>
+<div class="card" id="out" hidden><div id="grid" class="grid"></div><button id="save">Download Each PNG</button></div>
+</main>
+<script>
+var picker=document.getElementById('picker'), split=document.getElementById('split'), image=null, parts=[];
+picker.addEventListener('change',function(){
+ var f=picker.files&&picker.files[0];
+ if(!f){return}
+ document.getElementById('chosen').textContent='Selected: '+f.name;
+ var r=new FileReader();
+ r.onload=function(ev){
+  var im=new Image();
+  im.onload=function(){image=im;split.disabled=false;draw([])};
+  im.onerror=function(){alert('I could not read that image. Try a PNG saved in Photos or Files.')};
+  im.src=ev.target.result;
+ };
+ r.readAsDataURL(f);
+});
+function draw(boxes){
+ var c=document.getElementById('view'),x=c.getContext('2d');
+ c.width=image.naturalWidth;c.height=image.naturalHeight;x.clearRect(0,0,c.width,c.height);x.drawImage(image,0,0);
+ x.strokeStyle='#ff1684';x.lineWidth=Math.max(2,c.width/500);
+ boxes.forEach(function(b){x.strokeRect(b.x,b.y,b.w,b.h)});
+ document.getElementById('pv').hidden=false;
+}
+function getBoxes(){
+ var w=image.naturalWidth,h=image.naturalHeight,c=document.createElement('canvas'),x=c.getContext('2d',{willReadFrequently:true});
+ c.width=w;c.height=h;x.drawImage(image,0,0);var d=x.getImageData(0,0,w,h).data;
+ // Project alpha occupancy onto rows/columns. This works better for decorative letters
+ // laid out with whitespace between cells because disconnected sparkles remain grouped.
+ var row=new Uint8Array(h),col=new Uint8Array(w);
+ for(var y=0;y<h;y++)for(var xx=0;xx<w;xx++)if(d[(y*w+xx)*4+3]>15){row[y]=1;col[xx]=1}
+ function runs(a){var z=[],s=-1;for(var i=0;i<=a.length;i++){if(i<a.length&&a[i]&&s<0)s=i;if((i==a.length||!a[i])&&s>=0){z.push([s,i-1]);s=-1}}return z}
+ var rr=runs(row), boxes=[];
+ // For each occupied row band, calculate columns again only within that band.
+ rr.forEach(function(R){
+   var cc=new Uint8Array(w);
+   for(var yy=R[0];yy<=R[1];yy++)for(var q=0;q<w;q++)if(d[(yy*w+q)*4+3]>15)cc[q]=1;
+   runs(cc).forEach(function(C){boxes.push({x:C[0],y:R[0],w:C[1]-C[0]+1,h:R[1]-R[0]+1})});
+ });
+ return boxes;
+}
+function names(){
+ var m=document.getElementById('mode').value;
+ return m==='A-Z'?'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split(''):m==='a-z'?'abcdefghijklmnopqrstuvwxyz'.split(''):'0123456789'.split('');
+}
+split.onclick=function(){
+ try{
+  document.getElementById('msg').textContent='Detecting…';
+  setTimeout(function(){
+   var bs=getBoxes(),pad=Math.max(0,parseInt(document.getElementById('pad').value)||0),W=image.naturalWidth,H=image.naturalHeight;
+   bs=bs.map(function(b){var x=Math.max(0,b.x-pad),y=Math.max(0,b.y-pad),r=Math.min(W,b.x+b.w+pad),bt=Math.min(H,b.y+b.h+pad);return{x:x,y:y,w:r-x,h:bt-y}});
+   draw(bs); parts=[];var ns=names(),grid=document.getElementById('grid');grid.innerHTML='';
+   bs.forEach(function(b,i){
+    var c=document.createElement('canvas');c.width=b.w;c.height=b.h;c.getContext('2d').drawImage(image,b.x,b.y,b.w,b.h,0,0,b.w,b.h);
+    var url=c.toDataURL('image/png'),nm=ns[i]||('piece-'+(i+1));parts.push({url:url,name:nm});
+    var div=document.createElement('div');div.className='item';div.innerHTML='<img src="'+url+'"><input value="'+nm+'">';
+    (function(P,inp){inp.oninput=function(){P.name=inp.value||P.name}})(parts[parts.length-1],div.querySelector('input'));grid.appendChild(div);
+   });
+   document.getElementById('msg').textContent='Found '+parts.length+' pieces. Pink boxes show the detected areas.';
+   document.getElementById('out').hidden=false;
+  },20);
+ }catch(e){alert('Split error: '+e.message)}
+};
+document.getElementById('save').onclick=function(){
+ if(!parts.length)return;
+ parts.forEach(function(p,i){setTimeout(function(){var a=document.createElement('a');a.href=p.url;a.download=p.name+'.png';document.body.appendChild(a);a.click();a.remove()},i*250)});
+ alert('Safari may ask you to allow multiple downloads. Tap Allow.');
+};
+</script></body></html>
