@@ -1,0 +1,429 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>PNG Splitter — Grid Mode</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#fff;color:#18181b;font-family:system-ui,-apple-system,Arial,sans-serif}
+main{max-width:980px;margin:auto;padding:18px}h1{text-align:center;margin:10px 0 4px;font-size:36px}h1 span{color:#ff16a8}
+.sub{text-align:center;color:#666;margin:0 0 18px}.box{border:2px solid #222;border-radius:18px;padding:16px;margin-bottom:18px}
+.drop{border:3px dashed #00cfcf;border-radius:15px;text-align:center;padding:30px 12px;font-weight:800;cursor:pointer}
+.controls{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:14px}
+label{font-weight:800;font-size:14px}input{width:100%;padding:11px;border:1px solid #bbb;border-radius:10px;font-size:16px;margin-top:5px}
+.actions{display:flex;gap:9px;flex-wrap:wrap;margin-top:14px}button{border:0;border-radius:11px;padding:13px 16px;font-size:16px;font-weight:800}
+.pink{background:#ff16a8;color:#fff}.teal{background:#00d8d8;color:#071818}.dark{background:#222;color:#fff}
+#source{display:none;margin:15px auto 0}.source-thumb{max-width:100%;max-height:180px;margin:auto;display:block;border:1px solid #ddd;border-radius:8px}
+.sheet-settings{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:12px;margin-top:12px}
+.sheet-card{border:1px solid #ddd;border-radius:14px;padding:10px;background:#fafafa}
+.sheet-card .sheet-name{font-weight:800;word-break:break-word;margin:7px 0}
+.sheet-grid-controls{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.sheet-grid-controls input{padding:8px}.status{font-weight:800;margin-top:12px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:14px}.card{border:1px solid #ddd;border-radius:14px;overflow:hidden}
+.preview{height:160px;display:flex;align-items:center;justify-content:center;background-color:#fff;background-image:linear-gradient(45deg,#ddd 25%,transparent 25%),linear-gradient(-45deg,#ddd 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#ddd 75%),linear-gradient(-45deg,transparent 75%,#ddd 75%);background-size:20px 20px;background-position:0 0,0 10px,10px -10px,-10px 0}
+.preview img{max-width:92%;max-height:92%}.info{padding:10px}.info button{width:100%;margin-top:8px}.hide{display:none}.note{font-size:13px;color:#666}
+.adjust{margin-top:10px;border-top:1px solid #e5e5e5;padding-top:9px}.adjust label{display:block;font-size:12px;margin:7px 0}.adjust input[type=range]{padding:0;margin-top:3px}.adjust input[type=text]{padding:8px;margin-top:3px}.value{float:right;color:#666;font-weight:700}.reset{background:#eee;color:#222}
+@media(max-width:600px){.controls{grid-template-columns:1fr 1fr}h1{font-size:30px}}
+
+.erase-tools{margin-top:10px;border-top:1px solid #e5e5e5;padding-top:10px}
+.erase-row{display:flex;gap:7px;flex-wrap:wrap;align-items:center}
+.erase-row button{padding:9px 10px;font-size:13px}
+.erase-active{outline:3px solid #ff16a8}
+.edit-canvas{max-width:100%;height:auto;display:none;touch-action:none;background-color:#fff;background-image:linear-gradient(45deg,#ddd 25%,transparent 25%),linear-gradient(-45deg,#ddd 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#ddd 75%),linear-gradient(-45deg,transparent 75%,#ddd 75%);background-size:16px 16px;background-position:0 0,0 8px,8px -8px,-8px 0;border-radius:8px;margin-top:8px}
+</style>
+<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+</head>
+<body><main>
+<h1>✂️ <span>PNG</span> Splitter</h1>
+<p class="sub">Smart PNG Sheet Splitter • automatic piece detection • eraser • 5000 × 5000 • 500 DPI</p>
+<section class="box">
+<div id="drop" class="drop" role="button" tabindex="0">Tap here to choose PNG sheet(s)<input id="file" type="file" accept="image/png,image/*" multiple style="display:none"></div><button id="chooseFilesFallback" type="button" class="pink" style="width:100%;margin-top:8px">Choose PNG Sheet(s)</button>
+<div id="source" style="display:none"></div>
+<div class="controls">
+</div>
+<div style="margin-top:14px">
+<label>ZIP File Name
+<input id="zipName" type="text" value="alpha-splitter" placeholder="Example: Christmas Alphabet">
+</label>
+</div>
+<div class="actions"><button id="split" class="pink">Split Into Pieces</button><button id="autoAlign" class="teal hide">Auto Align &amp; Size</button><button id="all" class="teal hide">Download All as ZIP</button><button id="clear" class="dark">Clear</button></div>
+<div id="status" class="status"></div>
+<p class="note"><b>Mobile optimized:</b> large jobs are processed in smaller chunks to help prevent browser timeouts. Upload almost any transparent PNG sheet. The splitter detects separate visible artwork automatically instead of requiring rows and columns. Use the eraser on any piece to remove unwanted neighboring artwork or stray marks.</p>
+</section>
+<section id="results" class="grid"></section>
+</main>
+<script>
+const $=x=>document.getElementById(x),file=$('file'),drop=$('drop'),source=$('source'),results=$('results'),status=$('status'),all=$('all');
+let images=[],pieces=[];
+
+
+
+
+const uploadBox=document.getElementById('drop');
+const uploadInput=document.getElementById('file');
+const fallbackChoose=document.getElementById('chooseFilesFallback');
+
+function openFilePicker(e){
+  if(e){e.preventDefault();e.stopPropagation();}
+  // Reset first so iOS also fires change when the same image is chosen again.
+  uploadInput.value='';
+  uploadInput.click();
+}
+uploadBox.addEventListener('click',openFilePicker);
+fallbackChoose.addEventListener('click',openFilePicker);
+uploadBox.addEventListener('keydown',e=>{
+  if(e.key==='Enter'||e.key===' '){openFilePicker(e);}
+});
+uploadInput.addEventListener('click',e=>e.stopPropagation());
+uploadInput.addEventListener('change',async e=>{
+  const chosen=Array.from(e.target.files||[]);
+  if(!chosen.length){status.textContent='No images selected.';return;}
+  status.textContent=`Loading ${chosen.length} image${chosen.length===1?'':'s'}…`;
+  try{
+    await loadFiles(chosen);
+  }catch(err){
+    console.error(err);
+    status.textContent='Could not load that image. Try a PNG or JPG saved in Photos/Files.';
+  }
+});
+
+async function loadFiles(files){
+  images=[];pieces=[];results.innerHTML='';source.innerHTML='';all.classList.add('hide');$('autoAlign').classList.add('hide');
+  const valid=files.filter(f=>f.type.startsWith('image/'));
+  const settingsWrap=document.createElement('div');settingsWrap.className='sheet-settings';source.appendChild(settingsWrap);
+  for(const f of valid){
+    const data=await loadOne(f);images.push(data);
+    const card=document.createElement('div');card.className='sheet-card';
+    const thumb=document.createElement('img');thumb.className='source-thumb';thumb.src=data.url;thumb.alt=f.name;
+    const nm=document.createElement('div');nm.className='sheet-name';nm.textContent=f.name;
+    card.append(thumb,nm);settingsWrap.appendChild(card);
+  }
+  source.style.display=images.length?'block':'none';
+  status.textContent=images.length?`Loaded ${images.length} image${images.length===1?'':'s'}. Tap Split Into Pieces for automatic detection.`:'No valid images selected.';
+}
+function loadOne(f){
+  return new Promise((resolve,reject)=>{
+    const url=URL.createObjectURL(f);
+    const img=new Image();
+    img.onload=()=>{
+      resolve({
+        img,
+        url,
+        fileName:(f.name||'sheet').replace(/\.[^.]+$/,'')
+      });
+    };
+    img.onerror=()=>{
+      URL.revokeObjectURL(url);
+      reject(new Error('Image could not be decoded'));
+    };
+    img.src=url;
+  });
+}
+
+function browserYield(ms=0){
+  return new Promise(resolve=>setTimeout(resolve,ms));
+}
+
+function detectComponents(im){
+  const maxDim=900,ratio=Math.min(1,maxDim/Math.max(im.naturalWidth,im.naturalHeight));
+  const w=Math.max(1,Math.round(im.naturalWidth*ratio)),h=Math.max(1,Math.round(im.naturalHeight*ratio));
+  const c=document.createElement('canvas');c.width=w;c.height=h;
+  const ctx=c.getContext('2d');ctx.drawImage(im,0,0,w,h);
+  const data=ctx.getImageData(0,0,w,h).data;
+  const mask=new Uint8Array(w*h);
+  for(let i=0;i<w*h;i++) if(data[i*4+3]>18) mask[i]=1;
+  const seen=new Uint8Array(w*h), comps=[], stack=[];
+  const minArea=Math.max(20,Math.round(w*h*.00004));
+  for(let y=0;y<h;y++)for(let x=0;x<w;x++){
+    const idx=y*w+x;if(!mask[idx]||seen[idx])continue;
+    seen[idx]=1;stack.push(idx);
+    let minX=x,maxX=x,minY=y,maxY=y,count=0;
+    while(stack.length){
+      const q=stack.pop(),qx=q%w,qy=(q/w)|0;count++;
+      if(qx<minX)minX=qx;if(qx>maxX)maxX=qx;if(qy<minY)minY=qy;if(qy>maxY)maxY=qy;
+      const ns=[q-1,q+1,q-w,q+w];
+      for(const n of ns){
+        if(n<0||n>=w*h||seen[n]||!mask[n])continue;
+        const nx=n%w,ny=(n/w)|0;
+        if(Math.abs(nx-qx)+Math.abs(ny-qy)!==1)continue;
+        seen[n]=1;stack.push(n);
+      }
+    }
+    if(count>=minArea)comps.push({x:minX,y:minY,w:maxX-minX+1,h:maxY-minY+1,area:count});
+  }
+  // Merge nearby components so disconnected decorations belonging to one design stay together.
+  let changed=true;
+  while(changed){
+    changed=false;
+    outer:for(let i=0;i<comps.length;i++)for(let j=i+1;j<comps.length;j++){
+      const A=comps[i],B=comps[j];
+      const gapX=Math.max(0,Math.max(A.x,B.x)-Math.min(A.x+A.w,B.x+B.w));
+      const gapY=Math.max(0,Math.max(A.y,B.y)-Math.min(A.y+A.h,B.y+B.h));
+      const near=gapX<Math.max(A.w,B.w)*.12 && gapY<Math.max(A.h,B.h)*.12;
+      if(near){
+        const x=Math.min(A.x,B.x),y=Math.min(A.y,B.y),r=Math.max(A.x+A.w,B.x+B.w),bt=Math.max(A.y+A.h,B.y+B.h);
+        comps[i]={x,y,w:r-x,h:bt-y,area:A.area+B.area};comps.splice(j,1);changed=true;break outer;
+      }
+    }
+  }
+  const inv=1/ratio;
+  return comps.map(b=>({x:Math.floor(b.x*inv),y:Math.floor(b.y*inv),w:Math.ceil(b.w*inv),h:Math.ceil(b.h*inv)}))
+              .sort((a,b)=>a.y-b.y||a.x-b.x);
+}
+
+function renderPiece(i){
+  const pc=pieces[i],base=pc.base;
+  const workScale=2.5;
+  let can=document.createElement('canvas');
+  can.width=base.width*workScale;can.height=base.height*workScale;
+  let ctx=can.getContext('2d');ctx.clearRect(0,0,can.width,can.height);
+  const scale=pc.zoom/100,dw=base.width*scale,dh=base.height*scale;
+  const dx=(can.width-dw)/2+pc.x,dy=(can.height-dh)/2+pc.y;
+  ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality='high';
+  ctx.drawImage(base,dx,dy,dw,dh);pc.canvas=can;
+  const preview=document.querySelector(`[data-preview="${i}"]`);
+  if(preview)preview.src=can.toDataURL('image/png');
+}
+
+function card(i,w,h){
+  const pc=pieces[i];
+  let d=document.createElement('div');d.className='card';
+  let p=document.createElement('div');p.className='preview';
+  let im=document.createElement('img');im.dataset.preview=i;im.src=pc.canvas.toDataURL('image/png');p.appendChild(im);
+  let info=document.createElement('div');info.className='info';
+  let title=document.createElement('b');title.textContent=pc.letter;
+  let dims=document.createElement('div');dims.className='note';dims.textContent=`${w} × ${h}px`;
+  info.append(title,dims);
+  let adjust=document.createElement('div');adjust.className='adjust';
+
+  let nameLab=document.createElement('label');nameLab.textContent='Rename';
+  let name=document.createElement('input');name.type='text';name.value=pc.name.replace(/\.png$/i,'');
+  name.dataset.autoClear='1';
+  name.addEventListener('focus',()=>{
+    if(name.dataset.autoClear==='1'){
+      name.value='';
+      name.dataset.autoClear='0';
+      pc.name=`Piece-${i+1}.png`;
+    }
+  });
+  name.addEventListener('input',()=>{
+    name.dataset.autoClear='0';
+    pc.name=(name.value.trim()||`Piece-${i+1}`)+'.png'
+  });
+  nameLab.appendChild(name);adjust.appendChild(nameLab);
+
+  adjust.appendChild(makeSlider(i,'Left / Right','x',-Math.max(500,w*1.5),Math.max(500,w*1.5),1,0,'px'));
+  adjust.appendChild(makeSlider(i,'Up / Down','y',-Math.max(500,h*1.5),Math.max(500,h*1.5),1,0,'px'));
+  adjust.appendChild(makeSlider(i,'Zoom','zoom',25,300,1,100,'%'));
+
+  let reset=document.createElement('button');reset.type='button';reset.className='reset';reset.textContent='Reset This Letter';
+  reset.onclick=()=>{
+    pc.x=0;pc.y=0;pc.zoom=100;
+    adjust.querySelectorAll('input[type=range]').forEach(r=>{
+      const key=r.dataset.key;r.value=pc[key];
+      r.parentElement.querySelector('.value').textContent=r.value+(key==='zoom'?'%':'px');
+    });renderPiece(i)
+  };
+  adjust.appendChild(reset);
+  let erase=document.createElement('div');erase.className='erase-tools';
+  let erow=document.createElement('div');erow.className='erase-row';
+  let ebtn=document.createElement('button');ebtn.type='button';ebtn.className='dark';ebtn.textContent='Eraser';
+  let undo=document.createElement('button');undo.type='button';undo.className='reset';undo.textContent='Undo Erase';
+  let brush=document.createElement('input');brush.type='range';brush.min='5';brush.max='120';brush.value='35';brush.style.width='110px';
+  let edit=document.createElement('canvas');edit.className='edit-canvas';
+  let erasing=false,drawing=false,last=null;
+  function openEraser(){
+    erasing=!erasing;ebtn.classList.toggle('erase-active',erasing);edit.style.display=erasing?'block':'none';
+    if(erasing){edit.width=pc.base.width;edit.height=pc.base.height;edit.getContext('2d').drawImage(pc.base,0,0)}
+  }
+  ebtn.onclick=openEraser;
+  undo.onclick=()=>{if(pc.undo){pc.base.getContext('2d').clearRect(0,0,pc.base.width,pc.base.height);pc.base.getContext('2d').putImageData(pc.undo,0,0);pc.undo=null;renderPiece(i);if(erasing){edit.getContext('2d').clearRect(0,0,edit.width,edit.height);edit.getContext('2d').drawImage(pc.base,0,0)}}};
+  function pos(e){const r=edit.getBoundingClientRect();return{x:(e.clientX-r.left)*edit.width/r.width,y:(e.clientY-r.top)*edit.height/r.height}}
+  edit.addEventListener('pointerdown',e=>{if(!erasing)return;e.preventDefault();drawing=true;last=pos(e);pc.undo=pc.base.getContext('2d').getImageData(0,0,pc.base.width,pc.base.height);edit.setPointerCapture(e.pointerId)});
+  edit.addEventListener('pointermove',e=>{if(!drawing)return;e.preventDefault();const p=pos(e),ctx=pc.base.getContext('2d');ctx.save();ctx.globalCompositeOperation='destination-out';ctx.lineCap='round';ctx.lineJoin='round';ctx.lineWidth=+brush.value;ctx.beginPath();ctx.moveTo(last.x,last.y);ctx.lineTo(p.x,p.y);ctx.stroke();ctx.restore();last=p;edit.getContext('2d').clearRect(0,0,edit.width,edit.height);edit.getContext('2d').drawImage(pc.base,0,0);renderPiece(i)});
+  const stop=()=>{drawing=false;last=null};edit.addEventListener('pointerup',stop);edit.addEventListener('pointercancel',stop);
+  erow.append(ebtn,document.createTextNode('Brush'),brush,undo);erase.append(erow,edit);adjust.appendChild(erase);
+
+  let b=document.createElement('button');b.className='pink';b.textContent='Download PNG';b.onclick=()=>dl(i);
+  info.append(adjust,b);d.append(p,info);results.appendChild(d)
+}
+
+function makeSlider(i,label,key,min,max,step,value,unit){
+  let lab=document.createElement('label'),txt=document.createElement('span'),val=document.createElement('span'),r=document.createElement('input');
+  txt.textContent=label;val.className='value';val.textContent=value+unit;
+  r.type='range';r.min=min;r.max=max;r.step=step;r.value=value;r.dataset.key=key;
+  r.addEventListener('input',()=>{pieces[i][key]=+r.value;val.textContent=r.value+unit;renderPiece(i)});
+  lab.append(txt,val,r);return lab
+}
+
+
+function alphaBounds(canvas){
+  const ctx=canvas.getContext('2d',{willReadFrequently:true}),w=canvas.width,h=canvas.height;
+  const data=ctx.getImageData(0,0,w,h).data;
+  let minX=w,minY=h,maxX=-1,maxY=-1;
+  for(let y=0;y<h;y++){
+    for(let x=0;x<w;x++){
+      if(data[(y*w+x)*4+3]>12){
+        if(x<minX)minX=x;if(x>maxX)maxX=x;
+        if(y<minY)minY=y;if(y>maxY)maxY=y;
+      }
+    }
+  }
+  if(maxX<0)return null;
+  return {x:minX,y:minY,w:maxX-minX+1,h:maxY-minY+1};
+}
+
+function autoAlignAndSize(){
+  if(!pieces.length){status.textContent='Split your images first.';return}
+  const bounds=pieces.map(p=>alphaBounds(p.base));
+  const valid=bounds.filter(Boolean);
+  if(!valid.length){status.textContent='No visible artwork detected.';return}
+
+  // Normalize visible artwork to roughly 78% of each output cell.
+  const targetFill=.78;
+  pieces.forEach((pc,i)=>{
+    const b=bounds[i];
+    if(!b)return;
+    const cw=pc.base.width,ch=pc.base.height;
+    const scale=Math.min((cw*targetFill)/b.w,(ch*targetFill)/b.h);
+    pc.zoom=Math.max(25,Math.min(300,scale*100));
+
+    // renderPiece scales the whole base around its center. Calculate offsets
+    // needed to put the visible alpha bounds at the exact output center.
+    const s=pc.zoom/100;
+    const baseCenterX=cw/2,baseCenterY=ch/2;
+    const artCenterX=b.x+b.w/2,artCenterY=b.y+b.h/2;
+    pc.x=(baseCenterX-artCenterX)*s;
+    pc.y=(baseCenterY-artCenterY)*s;
+
+    renderPiece(i);
+
+    const card=document.querySelector(`[data-preview="${i}"]`)?.closest('.card');
+    if(card){
+      card.querySelectorAll('input[type=range]').forEach(r=>{
+        const key=r.dataset.key;
+        if(key && key in pc){
+          r.value=pc[key];
+          const v=r.parentElement.querySelector('.value');
+          if(v)v.textContent=Math.round(pc[key])+(key==='zoom'?'%':'px');
+        }
+      });
+    }
+  });
+  status.textContent=`Auto-aligned and sized ${valid.length} piece${valid.length===1?'':'s'}. You can still fine-tune each one manually.`;
+}
+
+
+function make5000Canvas(i){
+  const src=pieces[i].canvas,bounds=alphaBounds(src);
+  const out=document.createElement('canvas');out.width=5000;out.height=5000;
+  const ctx=out.getContext('2d');ctx.clearRect(0,0,5000,5000);
+  if(!bounds)return out;
+  const safeSize=4500;
+  const scale=Math.min(safeSize/bounds.w,safeSize/bounds.h);
+  const dw=bounds.w*scale,dh=bounds.h*scale;
+  ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality='high';
+  ctx.drawImage(src,bounds.x,bounds.y,bounds.w,bounds.h,(5000-dw)/2,(5000-dh)/2,dw,dh);
+  return out;
+}
+
+function setPngDpi(blob,dpi=500){
+  return blob.arrayBuffer().then(buf=>{
+    const bytes=new Uint8Array(buf);
+    // PNG pHYs uses pixels per meter. 500 DPI ~= 19685 ppm.
+    const ppm=Math.round(dpi/0.0254);
+    const data=new Uint8Array(9);
+    const dv=new DataView(data.buffer);
+    dv.setUint32(0,ppm,false);dv.setUint32(4,ppm,false);data[8]=1;
+
+    const type=new TextEncoder().encode('pHYs');
+    const crcInput=new Uint8Array(13);
+    crcInput.set(type,0);crcInput.set(data,4);
+
+    function crc32(arr){
+      let c=0xffffffff;
+      for(let n=0;n<arr.length;n++){
+        c^=arr[n];
+        for(let k=0;k<8;k++)c=(c>>>1)^((c&1)?0xedb88320:0);
+      }
+      return (c^0xffffffff)>>>0;
+    }
+
+    const chunk=new Uint8Array(4+4+9+4);
+    const cdv=new DataView(chunk.buffer);
+    cdv.setUint32(0,9,false);
+    chunk.set(type,4);
+    chunk.set(data,8);
+    cdv.setUint32(17,crc32(crcInput),false);
+
+    // Insert pHYs after IHDR: signature 8 + IHDR chunk 25 = byte 33.
+    const out=new Uint8Array(bytes.length+chunk.length);
+    out.set(bytes.slice(0,33),0);
+    out.set(chunk,33);
+    out.set(bytes.slice(33),33+chunk.length);
+    return new Blob([out],{type:'image/png'});
+  });
+}
+
+function exportBlob(i){
+  const out=make5000Canvas(i);
+  return new Promise(resolve=>out.toBlob(resolve,'image/png')).then(blob=>setPngDpi(blob,500));
+}
+
+async function dl(i){
+  const blob=await exportBlob(i);
+  let u=URL.createObjectURL(blob),a=document.createElement('a');
+  a.href=u;a.download=pieces[i].name;document.body.appendChild(a);a.click();a.remove();
+  setTimeout(()=>URL.revokeObjectURL(u),1000)
+}
+
+$('autoAlign').onclick=autoAlignAndSize;
+
+all.onclick=async()=>{
+  if(!pieces.length){status.textContent='Nothing to download yet.';return}
+  if(typeof JSZip==='undefined'){
+    status.textContent='ZIP download could not load. Check your internet connection and try again.';
+    return;
+  }
+  all.disabled=true;
+  const oldText=all.textContent;
+  all.textContent='Making ZIP…';
+  status.textContent=`Preparing ${pieces.length} PNGs in one ZIP file…`;
+  try{
+    const zip=new JSZip();
+    for(let i=0;i<pieces.length;i++){
+      status.textContent=`Preparing PNG ${i+1} of ${pieces.length}…`;
+      const blob=await exportBlob(i);
+      let name=pieces[i].name || `Piece-${i+1}.png`;
+      zip.file(name,blob);
+      await browserYield(20);
+    }
+    status.textContent='Building ZIP…';
+    const zipBlob=await zip.generateAsync(
+      {type:'blob',compression:'STORE',streamFiles:true},
+      meta=>{status.textContent=`Building ZIP… ${Math.round(meta.percent||0)}%`}
+    );
+    const u=URL.createObjectURL(zipBlob),a=document.createElement('a');
+    a.href=u;
+    let zipName=($('zipName').value||'alpha-splitter').trim()
+      .replace(/\.zip$/i,'')
+      .replace(/[\\/:*?"<>|]+/g,'-')
+      .replace(/\s+/g,' ')
+      .trim() || 'alpha-splitter';
+    a.download=zipName+'.zip';
+    document.body.appendChild(a);a.click();a.remove();
+    setTimeout(()=>URL.revokeObjectURL(u),1500);
+    status.textContent=`Downloaded ${pieces.length} PNGs as one ZIP file.`;
+  }catch(err){
+    console.error(err);
+    status.textContent='Could not create the ZIP. Please try again.';
+  }finally{
+    all.disabled=false;
+    all.textContent=oldText;
+  }
+};
+
+function escapeHtml(s){
+  return String(s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]));
+}
+</script></body></html>
