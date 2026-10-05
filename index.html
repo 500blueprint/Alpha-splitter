@@ -29,7 +29,7 @@ label{font-weight:800;font-size:14px}input{width:100%;padding:11px;border:1px so
 </head>
 <body><main>
 <h1>✂️ <span>PNG</span> Splitter</h1>
-<p class="sub">Grid splitter • automatic no-cutoff full-letter recovery • 5000 × 5000 PNG • 500 DPI</p>
+<p class="sub">The splitter that saves you time! Add your PNG or more than one and it will detect and separate each letter</p>
 <section class="box">
 <div id="drop" class="drop">Tap to choose one or multiple PNGs<input id="file" type="file" accept="image/*" multiple hidden></div>
 <div id="source" style="display:none"></div>
@@ -156,7 +156,7 @@ $('split').onclick=()=>{
           base,original,canvas:null,name:defaultName,x:0,y:0,zoom:100,sheet:sheetIndex,letter,
           cropL:0,cropR:0,cropT:0,cropB:0,
           sourceImg:img,sourceX:sx,sourceY:sy,sourceW:w,sourceH:h,
-          recoverX:0,recoverY:0,recoverGrow:0,autoRecovered:recovered.recovered
+          recoverX:0,recoverY:0,recoverGrow:0,revealL:0,revealR:0,revealT:0,revealB:0,autoRecovered:recovered.recovered
         });
         renderPiece(pieceIndex);card(pieceIndex,w,h);
       }
@@ -338,50 +338,33 @@ function card(i,w,h){
   });
   nameLab.appendChild(name);adjust.appendChild(nameLab);
 
-  let recoverTitle=document.createElement('div');recoverTitle.className='note';recoverTitle.style.cssText='font-weight:800;margin-top:8px;color:#222';recoverTitle.textContent='Replace / Recover Full Letter';
-  adjust.appendChild(recoverTitle);
-  adjust.appendChild(makeRecoverSlider(i,'Widen Replacement','recoverGrow',0,100,0,'%'));
-  adjust.appendChild(makeRecoverSlider(i,'Replace From Left / Right','recoverX',-Math.max(300,w*2),Math.max(300,w*2),0,'px'));
-  adjust.appendChild(makeRecoverSlider(i,'Replace From Up / Down','recoverY',-Math.max(300,h*2),Math.max(300,h*2),0,'px'));
+  let revealTitle=document.createElement('div');revealTitle.className='note';
+  revealTitle.style.cssText='font-weight:800;margin-top:8px;color:#222';
+  revealTitle.textContent='Reveal From Original';
+  adjust.appendChild(revealTitle);
+  adjust.appendChild(makeRevealSlider(i,'Reveal Left','revealL',0,100,0));
+  adjust.appendChild(makeRevealSlider(i,'Reveal Right','revealR',0,100,0));
+  adjust.appendChild(makeRevealSlider(i,'Reveal Up','revealT',0,100,0));
+  adjust.appendChild(makeRevealSlider(i,'Reveal Down','revealB',0,100,0));
 
-  let recoverButtons=document.createElement('div');
-  recoverButtons.style.cssText='display:grid;grid-template-columns:1fr 1fr;gap:6px;margin:8px 0';
-  [['← Replace Left','recoverX',-1],['Replace Right →','recoverX',1],['↑ Replace Up','recoverY',-1],['Replace Down ↓','recoverY',1]].forEach(([label,key,dir])=>{
-    const btn=document.createElement('button');btn.type='button';btn.className='reset';btn.textContent=label;
-    btn.onclick=()=>{
-      const step=(key==='recoverX'?pc.sourceW:pc.sourceH)*.08;
-      pc[key]=(pc[key]||0)+dir*step;
-      const slider=adjust.querySelector(`input[data-recover-key="${key}"]`);
-      if(slider){
-        pc[key]=Math.max(+slider.min,Math.min(+slider.max,pc[key]));
-        slider.value=pc[key];
-        slider.parentElement.querySelector('.value').textContent=Math.round(pc[key])+'px';
-      }
-      rebuildRecoveredSource(i);
-    };
-    recoverButtons.appendChild(btn);
-  });
-  adjust.appendChild(recoverButtons);
-
-  let cropTitle=document.createElement('div');cropTitle.className='note';cropTitle.style.cssText='font-weight:800;margin-top:8px;color:#222';cropTitle.textContent='Clean Up Edges';
-  adjust.appendChild(cropTitle);
-  adjust.appendChild(makeCropSlider(i,'Left Edge','cropL',0,45,0));
-  adjust.appendChild(makeCropSlider(i,'Right Edge','cropR',0,45,0));
-  adjust.appendChild(makeCropSlider(i,'Top Edge','cropT',0,45,0));
-  adjust.appendChild(makeCropSlider(i,'Bottom Edge','cropB',0,45,0));
+  let moveTitle=document.createElement('div');moveTitle.className='note';
+  moveTitle.style.cssText='font-weight:800;margin-top:8px;color:#222';
+  moveTitle.textContent='Move Letter';
+  adjust.appendChild(moveTitle);
   adjust.appendChild(makeSlider(i,'Left / Right','x',-Math.max(100,w),Math.max(100,w),1,0,'px'));
   adjust.appendChild(makeSlider(i,'Up / Down','y',-Math.max(100,h),Math.max(100,h),1,0,'px'));
   adjust.appendChild(makeSlider(i,'Zoom','zoom',25,300,1,100,'%'));
 
   let reset=document.createElement('button');reset.type='button';reset.className='reset';reset.textContent='Reset This Letter';
   reset.onclick=()=>{
-    pc.x=0;pc.y=0;pc.zoom=100;pc.cropL=pc.cropR=pc.cropT=pc.cropB=0;pc.recoverX=pc.recoverY=pc.recoverGrow=0;
+    pc.x=0;pc.y=0;pc.zoom=100;pc.cropL=pc.cropR=pc.cropT=pc.cropB=0;pc.recoverX=pc.recoverY=pc.recoverGrow=0;pc.revealL=pc.revealR=pc.revealT=pc.revealB=0;
     let resetOriginal=document.createElement('canvas');resetOriginal.width=pc.sourceW;resetOriginal.height=pc.sourceH;
     resetOriginal.getContext('2d').drawImage(pc.sourceImg,pc.sourceX,pc.sourceY,pc.sourceW,pc.sourceH,0,0,pc.sourceW,pc.sourceH);
     pc.original=resetOriginal;pc.base=document.createElement('canvas');pc.base.width=pc.sourceW;pc.base.height=pc.sourceH;pc.base.getContext('2d').drawImage(resetOriginal,0,0);
     adjust.querySelectorAll('input[type=range]').forEach(r=>{
-      const key=r.dataset.key,cropKey=r.dataset.cropKey,recoverKey=r.dataset.recoverKey;
-      if(cropKey){r.value=0;r.parentElement.querySelector('.value').textContent='0%';}
+      const key=r.dataset.key,cropKey=r.dataset.cropKey,recoverKey=r.dataset.recoverKey,revealKey=r.dataset.revealKey;
+      if(revealKey){r.value=0;r.parentElement.querySelector('.value').textContent='0%';}
+      else if(cropKey){r.value=0;r.parentElement.querySelector('.value').textContent='0%';}
       else if(recoverKey){r.value=0;r.parentElement.querySelector('.value').textContent='0'+(recoverKey==='recoverGrow'?'%':'px');}
       else if(key){r.value=pc[key];r.parentElement.querySelector('.value').textContent=r.value+(key==='zoom'?'%':'px');}
     });renderPiece(i)
@@ -389,6 +372,36 @@ function card(i,w,h){
   adjust.appendChild(reset);
   let b=document.createElement('button');b.className='pink';b.textContent='Download PNG';b.onclick=()=>dl(i);
   info.append(adjust,b);d.append(p,info);results.appendChild(d)
+}
+
+function applyDirectionalReveal(i){
+  const pc=pieces[i],img=pc.sourceImg;
+  if(!img)return;
+  const l=Math.round(pc.sourceW*(pc.revealL||0)/100);
+  const r=Math.round(pc.sourceW*(pc.revealR||0)/100);
+  const t=Math.round(pc.sourceH*(pc.revealT||0)/100);
+  const b=Math.round(pc.sourceH*(pc.revealB||0)/100);
+
+  let sx=Math.max(0,pc.sourceX-l), sy=Math.max(0,pc.sourceY-t);
+  let ex=Math.min(img.naturalWidth,pc.sourceX+pc.sourceW+r);
+  let ey=Math.min(img.naturalHeight,pc.sourceY+pc.sourceH+b);
+  const w=Math.max(1,ex-sx),h=Math.max(1,ey-sy);
+
+  const c=document.createElement('canvas');c.width=w;c.height=h;
+  c.getContext('2d').drawImage(img,sx,sy,w,h,0,0,w,h);
+  pc.original=c;pc.base=document.createElement('canvas');
+  pc.base.width=w;pc.base.height=h;pc.base.getContext('2d').drawImage(c,0,0);
+  renderPiece(i);
+}
+function makeRevealSlider(i,label,key,min,max,value){
+  let lab=document.createElement('label'),txt=document.createElement('span'),
+      val=document.createElement('span'),r=document.createElement('input');
+  txt.textContent=label;val.className='value';val.textContent=value+'%';
+  r.type='range';r.min=min;r.max=max;r.step=1;r.value=value;r.dataset.revealKey=key;
+  r.addEventListener('input',()=>{
+    pieces[i][key]=+r.value;val.textContent=r.value+'%';applyDirectionalReveal(i);
+  });
+  lab.append(txt,val,r);return lab;
 }
 
 function makeRecoverSlider(i,label,key,min,max,value,unit){
